@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto_bpsm"
+version = "1.0.0"
+dependencies = [
+  "beautifulsoup4",
+  "lxml",
+  "pandas",
+  "pydantic-xml"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]  
