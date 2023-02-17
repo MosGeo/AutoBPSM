@@ -1,0 +1,13 @@
+c
+c Sediment Water Interface Temperature 1D [PetroMod 2017.1]
+c
+Head | Age | SWIT |
+Head | [Ma] | [°C] |
+Key | Age | Value |
+Stop-----------------------
+Format | %6.4f | %6.2f |
+c--------------------------
+Data | 2.6000 | 5.00 |
+Data | 5.3000 | 5.00 |
+Data | 10.7000 | 5.00 |
+Data | 20.0000 | 5.69 |
