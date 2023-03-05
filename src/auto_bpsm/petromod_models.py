@@ -22,6 +22,13 @@ DEF_FILENAMES = {
 }
 
 
+class PetroModModel:
+    """PetroMod model"""
+
+    model_name: str
+    model_folder: str
+
+
 class OneDimensionalModel:
     """One dimenstional model"""
 

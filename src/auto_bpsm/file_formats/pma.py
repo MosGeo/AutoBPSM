@@ -24,6 +24,12 @@ class PetroModASCII(dict):
 
         return pma
 
+    def save(self):
+        """Saves the file back"""
+        if not self.filename:
+            raise FileExistsError
+        self.write_file(self.filename)
+
     def write_file(self, filname: Path) -> None:
         """Writes the pma file"""
         lines = []

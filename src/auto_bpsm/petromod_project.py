@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 import shutil
 from auto_bpsm.file_formats.lithology_catalogue import LithologyCatalogue
 from auto_bpsm.petromod_executables import PetroMod
-from auto_bpsm.petromod_models import OneDimensionalModel, TwoDimensionalModel, ThreeDimensionalModel
+from auto_bpsm.petromod_models import OneDimensionalModel, TwoDimensionalModel, ThreeDimensionalModel, PetroModModel
 
 
 @dataclass
@@ -21,6 +21,7 @@ class PetroModProject:
     """A petromod project representation"""
 
     project_folder: Path
+    lithology_catalouge: LithologyCatalogue = None
     petromod: PetroMod
 
     def __init__(self, project_folder: Path, petromod: PetroMod = None, petromod_folder_index: int = 0):
@@ -77,7 +78,7 @@ class PetroModProject:
             return None
         return model_folder
 
-    def load_model(self, model_name: str, model_dimension: Annotated[int, ValueRange(1, 3)] = None):
+    def load_model(self, model_name: str, model_dimension: Annotated[int, ValueRange(1, 3)] = None) -> PetroModModel:
         """Loads a model"""
         # Model dimension
         model_folder = self.get_model_folder(model_name, model_dimension)
@@ -89,9 +90,24 @@ class PetroModProject:
 
     def load_lithology(self) -> LithologyCatalogue:
         """Load lithology file"""
+
+        # Return it if it is already loaded
+        if self.lithology_catalouge:
+            return self.lithology_catalouge
+
         lithology_filename = Path(self.project_folder, "geo", "Lithologies.xml")
-        lithology_catalouge = LithologyCatalogue.read_catalogue_file(lithology_filename)
-        return lithology_catalouge
+        self.lithology_catalouge = LithologyCatalogue.read_catalogue_file(lithology_filename)
+        return self.lithology_catalouge
+
+    def save_lithology(self) -> None:
+        """Saves teh lithology file back"""
+
+        # Stopping condition
+        if not self.lithology_catalouge:
+            return
+        # Write lihology file
+        lithology_filename = Path(self.project_folder, "geo", "Lithologies.xml")
+        self.lithology_catalouge.write_catalogue_file(lithology_filename)
 
     def delete_model(self, model_name: str, model_dimension: Annotated[int, ValueRange(1, 3)] = None):
         """Deletes a model"""

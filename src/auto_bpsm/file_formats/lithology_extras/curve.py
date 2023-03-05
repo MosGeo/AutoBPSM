@@ -56,4 +56,4 @@ class CurveGroup(BaseXmlModel):
     id: str = element(tag="Id")
     name: str = element(tag="Name")
     readonly: str = element(tag="ReadOnly")
-    curves: list[Curve] = element(tag="Curve")
+    curves: list[Curve] = element(tag="Curve", default_factory=list)

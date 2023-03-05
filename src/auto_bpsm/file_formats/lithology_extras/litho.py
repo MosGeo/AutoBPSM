@@ -46,8 +46,8 @@ class LithologyGroup(BaseXmlModel):
     name: str = element(tag="Name")
     readonly: str = element(tag="ReadOnly")
     petromod_id: str = element(tag="PetroModId")
-    lithology_groups: list[TLithologyGroup] = element(tag="LithologyGroup")
-    lithologies: list[Lithology] = element(tag="Lithology")
+    lithology_groups: list[TLithologyGroup] = element(tag="LithologyGroup", default_factory=list)
+    lithologies: list[Lithology] = element(tag="Lithology", default_factory=list)
 
     # def get_lithology(self, lithology_name: str):
     #     """retrieves a lithology by its name"""

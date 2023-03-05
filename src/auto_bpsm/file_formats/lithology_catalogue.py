@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional
+from typing_extensions import Self
 import pandas as pd
 from pydantic_xml import BaseXmlModel, element, attr
 from auto_bpsm.file_formats.lithology_extras.meta import Meta
@@ -9,7 +10,7 @@ from auto_bpsm.file_formats.lithology_extras.litho import LithologyGroup, Lithol
 
 class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
     # xmlns_xsd: str = attr(name="xmlns:xsd")
-    # xmlns_xsi: str = attr(name="xmlns:xsi")
+    # xmlns_xsi: str = attr(name="xsi")
     name: str = element(tag="Name")
     version: str = element(tag="Version")
     readonly: str = element(tag="ReadOnly")
@@ -27,7 +28,7 @@ class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
         underscore_attrs_are_private = True
 
     @staticmethod
-    def read_catalogue_file(filename: Path):
+    def read_catalogue_file(filename: Path) -> Self:
         """Reads the file"""
         with open(filename, "r", encoding="utf-8") as f:
             raw_xml = f.read()
@@ -60,9 +61,10 @@ class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
                 lg_to_add = [(mpg, new_history) for mpg in lithology_group.lithology_groups]
                 groups_to_analyze.extend(lg_to_add)
 
-            for litho in lithology_group.lithologies:
-                row = [litho.id, litho.name, litho, new_history]
-                lithology_table_raw.append(row)
+            if lithology_group.lithologies:
+                for litho in lithology_group.lithologies:
+                    row = [litho.id, litho.name, litho, new_history]
+                    lithology_table_raw.append(row)
 
         lithology_table = pd.DataFrame(data=lithology_table_raw, columns=["Id", "Name", "Lithology", "Group"])
         return lithology_table

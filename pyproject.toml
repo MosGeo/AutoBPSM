@@ -9,7 +9,7 @@ dependencies = [
   "beautifulsoup4",
   "lxml",
   "pandas",
-  "pydantic-xml"
+  "pydantic-xml",
 ]
 
 [tool.setuptools.packages.find]

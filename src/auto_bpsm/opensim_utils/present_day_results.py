@@ -1,6 +1,7 @@
 from pathlib import Path
 import re
 import pandas as pd
+import numpy as np
 from auto_bpsm.petromod_project import PetroModProject
 
 
@@ -52,3 +53,16 @@ def get_layer_data(project: PetroModProject, model_name: str, layer_index) -> tu
     data = pd.DataFrame(data=data_raw, columns=["Element", "Value"])
 
     return layer_name, layer_unit, data
+
+
+def get_layer_data_table(project, model_name, layer_names) -> pd.DataFrame:
+    """Get data quickly"""
+    layer_data_dict = {}
+    output_layter_table = get_layers_indecies(project, model_name)
+    for layer_name in layer_names:
+        layer_index = output_layter_table[output_layter_table["Layer"] == layer_name]["Index"].values[0]
+        column_values = get_layer_data(project, model_name, layer_index)[2].values[:, 1]
+        layer_data_dict[layer_name] = np.flip(column_values)
+
+    data_table = pd.DataFrame(layer_data_dict).astype(float)
+    return data_table

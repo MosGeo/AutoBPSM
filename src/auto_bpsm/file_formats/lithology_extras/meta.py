@@ -24,7 +24,7 @@ class MetaParameterGroup(BaseXmlModel):
     id: str = element(tag="Id")
     name: str = element(tag="Name")
     readonly: str = element(tag="ReadOnly")
-    meta_parameters: list[MetaParameter] = element(tag="MetaParameter")
+    meta_parameters: Optional[list[MetaParameter]] = element(tag="MetaParameter")
     meta_parameter_groups: Optional[list[TMetaParameterGroup]] = element(tag="MetaParameterGroup")
 
 
@@ -49,9 +49,10 @@ class Meta(BaseXmlModel):
                 mpg_to_add = [(mpg, new_history) for mpg in meta_parameter_group.meta_parameter_groups]
                 groups_to_analyze.extend(mpg_to_add)
 
-            for mp in meta_parameter_group.meta_parameters:
-                row = [mp.id, mp.name, mp.default_value, new_history]
-                meta_table_raw.append(row)
+            if meta_parameter_group.meta_parameters:
+                for mp in meta_parameter_group.meta_parameters:
+                    row = [mp.id, mp.name, mp.default_value, new_history]
+                    meta_table_raw.append(row)
         meta_table = pd.DataFrame(data=meta_table_raw, columns=["Id", "Name", "Default", "Group"])
         return meta_table
 

@@ -99,6 +99,12 @@ class PetroModTable:
 
         return pmt
 
+    def save(self):
+        """Saves the file back"""
+        if not self.filename:
+            raise FileExistsError
+        self.write_file(self.filename)
+
     def write_file(self, filename: Path):
         """Write the files"""
         with open(filename, "w", encoding="utf-8") as f:
