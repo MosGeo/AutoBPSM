@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Optional
 from typing_extensions import Self
-import pandas as pd
-from pydantic_xml import BaseXmlModel, element, attr
-from auto_bpsm.file_formats.lithology_extras.meta import Meta
+from pydantic_xml import BaseXmlModel, element  # , attr
+from auto_bpsm.file_formats.lithology_extras.meta import Meta, MetaParameter, MetaParameterGroup
 from auto_bpsm.file_formats.lithology_extras.curve import CurveGroup, Curve
-from auto_bpsm.file_formats.lithology_extras.litho import LithologyGroup, Lithology
+from auto_bpsm.file_formats.lithology_extras.litho import LithologyGroup, Lithology, MainLithologyGroup
+from auto_bpsm.utilities import decode_id_and_name, generate_new_id, items_lookup_return, num_string_convert
 
 
 class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
@@ -16,16 +16,42 @@ class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
     readonly: str = element(tag="ReadOnly")
     meta: Meta = element(tag="Meta")
     curve_groups: list[CurveGroup] = element(tag="CurveGroup")
-    lithology_groups: list[LithologyGroup] = element(tag="LithologyGroup")
-
-    # Accelerators
-    _meta_parameter_group_table: pd.DataFrame = None
-    _meta_parameter_table: pd.DataFrame = None
-    _lithology_table: pd.DataFrame = None
-    _curve_table: pd.DataFrame = None
+    main_lithology_groups: list[MainLithologyGroup] = element(tag="LithologyGroup")
 
     class Config:
         underscore_attrs_are_private = True
+
+    @property
+    def lithology_ids(self):
+        """Returns all the ids of the lithology in the lithology groups"""
+        ids = []
+        for main_lithology_group in self.main_lithology_groups:
+            ids.extend(main_lithology_group.lithology_ids)
+        return ids
+
+    @property
+    def lithology_group_ids(self):
+        """Returns all the ids in the lithology groups"""
+        ids = []
+        for main_lithology_group in self.main_lithology_groups:
+            ids.extend(main_lithology_group.lithology_group_ids)
+        return ids
+
+    @property
+    def main_lithology_group_ids(self):
+        """Return all the ids for main lithology groups"""
+        ids = []
+        for main_lithology_group in self.main_lithology_groups:
+            ids.append(main_lithology_group.id)
+        return ids
+
+    @property
+    def curve_ids(self):
+        """Returns all the ids of the curves in the curve group"""
+        ids = []
+        for curve_group in self.curve_groups:
+            ids.extend(curve_group.curve_ids)
+        return ids
 
     @staticmethod
     def read_catalogue_file(filename: Path) -> Self:
@@ -33,10 +59,6 @@ class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
         with open(filename, "r", encoding="utf-8") as f:
             raw_xml = f.read()
         catalogue = LithologyCatalogue.from_xml(raw_xml)
-        catalogue._meta_parameter_group_table = catalogue.meta.get_meta_parameter_group_table()
-        catalogue._meta_parameter_table = catalogue.meta.get_meta_parameter_table()
-        catalogue._lithology_table = catalogue.get_lithology_table()
-        catalogue._curve_table = catalogue.get_curve_table()
         return catalogue
 
     def write_catalogue_file(self, filename: Path):
@@ -48,114 +70,286 @@ class LithologyCatalogue(BaseXmlModel, tag="Catalogue"):
         with open(filename, "w", encoding="utf-8") as f:
             f.write(xml_string)
 
-    def get_lithology_table(self) -> pd.DataFrame:
-        """Build the lithology table"""
-        lithology_table_raw = []
-        groups_to_analyze = [(lg, []) for lg in self.lithology_groups]
+    def get_main_lithology_groups(self, identifier: str, is_unique: bool = False):
+        """Gets the lithology group"""
+        id, name = decode_id_and_name(identifier)
 
-        while len(groups_to_analyze) != 0:
-            lithology_group, history = groups_to_analyze.pop()
-            new_history = history.copy()
-            new_history.append(lithology_group.name)
-            if lithology_group.lithology_groups is not None and len(lithology_group.lithology_groups) > 0:
-                lg_to_add = [(mpg, new_history) for mpg in lithology_group.lithology_groups]
-                groups_to_analyze.extend(lg_to_add)
+        found_lithologies_group = []
+        for main_lithology_group in self.main_lithology_groups:
+            if main_lithology_group.name == name or main_lithology_group.id == id:
+                found_lithologies_group.append(main_lithology_group)
+        return items_lookup_return(found_lithologies_group, is_unique)
 
-            if lithology_group.lithologies:
-                for litho in lithology_group.lithologies:
-                    row = [litho.id, litho.name, litho, new_history]
-                    lithology_table_raw.append(row)
+    def get_main_lithology_group(self, identifier: str) -> MainLithologyGroup:
+        """Gets the lithology group"""
+        return self.get_main_lithology_groups(identifier, True)
 
-        lithology_table = pd.DataFrame(data=lithology_table_raw, columns=["Id", "Name", "Lithology", "Group"])
-        return lithology_table
+    def get_lithology_groups(self, identifier: str, is_unique: bool = False):
+        """Get the lithology group"""
+        found_lithology_group = []
+        for main_lithology_group in self.main_lithology_groups:
+            found_lithology_group.extend(main_lithology_group.get_lithology_groups(identifier, False))
+        return items_lookup_return(found_lithology_group, is_unique)
 
-    def get_lithology(self, lithology_name: str) -> Lithology:
-        """retrieves a lithology by its name"""
+    def get_lithology_group(self, identifier: str):
+        """Get one lithology group"""
+        return self.get_lithology_groups(identifier, True)
 
-        to_search = self.lithology_groups.copy()
-
+    def get_lithologies(self, identifier: str) -> list[tuple[Lithology, LithologyGroup, MainLithologyGroup]]:
+        """retrieves a lithology by its name or id"""
         found_lithologies = []
-        while len(to_search):
-            lithology_group = to_search.pop()
-            for lithology in lithology_group.lithologies:
-                if lithology.name.lower() == lithology_name.lower():
-                    found_lithologies.append(lithology)
-            to_search.extend(lithology_group.lithology_groups)
+        for main_lithology_group in self.main_lithology_groups:
+            found_lithologies.extend(main_lithology_group.get_lithologies(identifier, False))
+        return found_lithologies
 
-        if len(found_lithologies) == 0:
-            raise NameError("Lithology not found.")
-        if len(found_lithologies) == 1:
-            lithology = found_lithologies[0]
-        else:
-            raise NameError("Multiple lithologies found.")
+    def get_lithology(
+        self,
+        identifier: str,
+    ) -> tuple[Lithology, LithologyGroup, MainLithologyGroup]:
+        """retrieves a lithology by its name or id"""
+        found_lithologies = self.get_lithologies(identifier)
+        return items_lookup_return(found_lithologies, True)
 
-        return lithology
-
-    def get_curve_table(self) -> pd.DataFrame:
-        """Build the curve table"""
-        curve_table_raw = []
-        for curve_group in self.curve_groups:
-            for curve in curve_group.curves:
-                row = [curve.id, curve.name, curve, curve_group.name]
-                curve_table_raw.append(row)
-        curve_table = pd.DataFrame(data=curve_table_raw, columns=["Id", "Name", "Curve", "Curve Group"])
-        return curve_table
-
-    def get_curve(self, curve_name: str) -> Curve:
+    def get_curves(
+        self,
+        identifier: str,
+    ) -> list[tuple[Curve, CurveGroup]]:
         """returns a curve using the curve name"""
+        found_curves = []
         for curve_group in self.curve_groups:
-            for curve in curve_group.curves:
-                if curve.name == curve_name:
-                    return curve
-        return None
+            found_curves.extend(curve_group.get_curves(identifier, False))
+        return found_curves
 
-    def get_lithology_parameters_table(self, lithology_name: str) -> pd.DataFrame:
-        """Get lithology parameters"""
-        lithology = self.get_lithology(lithology_name=lithology_name)
+    def get_curve(
+        self,
+        identifier: str,
+    ) -> tuple[Curve, CurveGroup]:
+        """Return one curve"""
+        found_curves = self.get_curves(identifier)
+        return items_lookup_return(found_curves, True)
 
-        parameters_table_raw = []
-        for parameter_group in lithology.parameter_groups:
-            for parameter in parameter_group.parameters:
-                meta_parameter_name = self.get_parameter_name_by_id(parameter.meta_parameter_id)
-                parameters_table_raw.append([parameter.meta_parameter_id, meta_parameter_name, parameter.value])
+    def get_curve_group_for_curve(self, curve: Curve) -> CurveGroup:
+        """Return the curve group for the curve"""
+        found_curve_groups = []
+        for curve_group in self.curve_groups:
+            if curve_group.contains_curve(curve):
+                found_curve_groups.append(curve_group)
+        return items_lookup_return(found_curve_groups, True)
 
-        parameters_table = pd.DataFrame(data=parameters_table_raw, columns=["Id", "Name", "Value"])
-        return parameters_table
+    def get_lithology_group_for_lithology(self, lithology: Lithology):
+        found_lithology_groups = []
+        for main_lithology_group in self.main_lithology_groups:
+            lithology_groups = main_lithology_group.get_lithology_groups_for_lithology(lithology)
+            found_lithology_groups.extend(lithology_groups)
+        return items_lookup_return(found_lithology_groups, True)
 
-    def get_parameter_name_by_id(self, id: str) -> str:
-        """Gets the parameter name from id"""
-        meta_parameter_table_index = self._meta_parameter_table["Id"] == id
-        meta_parameter_name = self._meta_parameter_table.loc[meta_parameter_table_index]["Name"].values[0]
-        return meta_parameter_name
+    def get_main_lithology_group_for_lithology_group(self, lithology_group: LithologyGroup) -> MainLithologyGroup:
+        found_main_lithology_groups = []
+        for main_lithology_group in self.main_lithology_groups:
+            if main_lithology_group.contains_lithology_group(lithology_group):
+                found_main_lithology_groups.append(main_lithology_group)
+        return items_lookup_return(found_main_lithology_groups, True)
 
-    def get_parameter_id_by_name(self, name: str) -> str:
-        meta_parameter_table_index = self._meta_parameter_table["Name"] == name
-        meta_parameter_id = self._meta_parameter_table.loc[meta_parameter_table_index]["Id"].values[0]
-        return meta_parameter_id
+    def get_meta_parameter_group(
+        self,
+        id: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> MetaParameterGroup:
+        """Gets the meta parameter group"""
+        to_search = self.meta.meta_parameter_groups.copy()
+
+        found_mpg = []
+        while len(to_search) > 0:
+            meta_parameter_group = to_search.pop()
+            if meta_parameter_group.name == name or meta_parameter_group.id == id:
+                found_mpg.append(meta_parameter_group)
+            if meta_parameter_group.meta_parameter_groups is not None:
+                to_search.extend(meta_parameter_group.meta_parameter_groups)
+
+        n_mpg_found = len(found_mpg)
+        if n_mpg_found == 0:
+            return None, None
+        elif n_mpg_found == 1:
+            return found_mpg[0]
+        else:
+            raise LookupError("Multiple items found. Try searching by the unique id.")
+
+    def get_meta_parameter(
+        self,
+        id: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> tuple[MetaParameter, MetaParameterGroup]:
+        """Get meta parameter"""
+
+        to_search = self.meta.meta_parameter_groups.copy()
+
+        found_mp = []
+        while len(to_search) > 0:
+            meta_parameter_group = to_search.pop()
+            if meta_parameter_group.meta_parameters is not None:
+                for meta_parameter in meta_parameter_group.meta_parameters:
+                    if meta_parameter.name == name or meta_parameter.id == id:
+                        found_mp.append((meta_parameter, meta_parameter_group))
+            if meta_parameter_group.meta_parameter_groups is not None:
+                to_search.extend(meta_parameter_group.meta_parameter_groups)
+
+        n_mp_found = len(found_mp)
+        if n_mp_found == 0:
+            return None, None
+        elif n_mp_found == 1:
+            return found_mp[0]
+        else:
+            raise LookupError("Multiple items found. Try searching by the unique id.")
+
+    def get_lithology_parameter(self, lithology: str | Lithology, parameter_name: str):
+        """Get lithology parameter"""
+        if isinstance(lithology, str):
+            lithology, _, _ = self.get_lithology(lithology_name=lithology)
+        meta_parameter, _meta_parameter_group = self.get_meta_parameter(name=parameter_name)
+        parameter = lithology.get_parameter(meta_parameter.id)
+
+        return parameter
+
+    def get_lithology_parameter_value(self, lithology: str | Lithology, parameter_name: str):
+        """Gets the lithology parameter"""
+        parameter = self.get_lithology_parameter(lithology=lithology, parameter_name=parameter_name)
+        raw_value = parameter.value
+        if parameter.is_curve:
+            curve, cuve_group = self.get_curve(raw_value)
+            value = curve.curve_table
+        else:
+            value = num_string_convert(raw_value)
+        return value
 
     def update_lithology_parameter(
-        self, lithology_name: str, parameter_dict: dict[str, str], is_create_new_curves: bool = False
+        self,
+        lithology: str | Lithology,
+        parameter_dict: dict[str, str],
     ):
-        lithology = self.get_lithology(lithology_name=lithology_name)
+        """Update lithology based on parameters provided by the user"""
+        if isinstance(lithology, str):
+            lithology, _lithology_group, _main_lithology_group = self.get_lithology(identifier=lithology)
 
-        # Construct the parameter dictionary with names
-        parameter_id_value_dict = {}
+        # Update
         for parameter_name, value in parameter_dict.items():
-            parameter_id = self.get_parameter_id_by_name(parameter_name)
-            parameter_id_value_dict[parameter_id] = value
+            meta_parameter, _meta_parameter_group = self.get_meta_parameter(name=parameter_name)
+            parameter = lithology.get_parameter(id=meta_parameter.id)
+            if parameter.is_curve:
+                curve, curve_group = self.get_curve(id=parameter.meta_parameter_id)
+                curve.set_curve_table(value)
+            else:
+                parameter.value = str(value)
 
-        for parameter_group in lithology.parameter_groups:
-            for parameter in parameter_group.parameters:
-                if parameter.meta_parameter_id in parameter_id_value_dict.keys():
-                    parameter.value = str(parameter_id_value_dict[parameter.meta_parameter_id])
+    def duplicate_curve(
+        self,
+        source_curve: str | Curve,
+        new_curve_name: str,
+        curve_group: Optional[CurveGroup] = None,
+    ) -> Curve:
+        """Duplicates a curve"""
+        if isinstance(source_curve, str):
+            source_curve, curve_group = self.get_curve(source_curve)
+        new_curve = source_curve.copy(deep=True)
+        new_curve.name = new_curve_name
+        new_curve.id = generate_new_id(self.curve_ids)
+
+        # Add to curve group
+        if curve_group is None:
+            curve_group = self.get_curve_group_for_curve(source_curve)
+        curve_group.curves.append(new_curve)
+        return new_curve
 
     def duplicate_lithology(
         self,
-        source_lithology: str,
-        distination_lithology: str,
-        source_lithology_group: Optional[str] = None,
-        distination_lithology_group: Optional[str] = None,
-        set_modifiable: bool = True,
+        source_lithology: str | Lithology,
+        new_lithology_name: str,
+        lithology_group: Optional[str | LithologyGroup] = None,
+        modifiable: bool = True,
     ):
         """Duplicate a lithology"""
-        return
+        if isinstance(source_lithology, str):
+            id, name = decode_id_and_name(source_lithology)
+            source_lithology, lithology_group = self.get_lithology(id=id, name=name)
+
+        new_lithology = source_lithology.copy(deep=True)
+        new_lithology.name = new_lithology_name
+        new_lithology.id = generate_new_id(self.lithology_ids)
+        new_lithology.readonly = not modifiable
+
+        # Create new curves
+        for parameter_group in new_lithology.parameter_groups:
+            for parameter in parameter_group.parameters:
+                if parameter.is_curve:
+                    pass
+
+        if lithology_group is None:
+            lithology_group, _main_lithology_group = self.get_lithology_group_for_lithology(source_lithology)
+        lithology_group.lithologies.append(new_lithology)
+        return new_lithology
+
+    def create_lithology_group(
+        self,
+        source_lithology_group: str | LithologyGroup,
+        new_name: str,
+        main_lithology_group: Optional[str | MainLithologyGroup] = None,
+    ) -> LithologyGroup:
+        """Create a lithology group"""
+
+        # Prepare
+        if isinstance(source_lithology_group, str):
+            source_lithology_group, _ = self.get_lithology_group(source_lithology_group)
+
+        if main_lithology_group is None:
+            main_lithology_group = self.get_main_lithology_group_for_lithology_group(source_lithology_group)
+        if isinstance(main_lithology_group, str):
+            main_lithology_group, _ = self.get_lithology_group(main_lithology_group)
+
+        new_lithology_group = source_lithology_group.copy()
+        new_lithology_group.name = new_name
+        new_lithology_group.lithologies = None
+        new_lithology_group.readonly = False
+        new_lithology_group.id = generate_new_id(self.lithology_group_ids)
+
+        main_lithology_group.lithology_groups.append(new_lithology_group)
+        return new_lithology_group
+
+    def create_main_lithology_group(
+        self,
+        source_main_lithology_group: MainLithologyGroup | str,
+        new_name: str,
+    ) -> MainLithologyGroup:
+        """Create a main lithology group"""
+        if isinstance(source_main_lithology_group, str):
+            source_main_lithology_group = self.get_main_lithology_group(source_main_lithology_group)
+
+        new_main_lithology_group = source_main_lithology_group.copy()
+        new_main_lithology_group.id = generate_new_id(existing_ids=self.main_lithology_group_ids)
+        new_main_lithology_group.lithology_groups = None
+        new_main_lithology_group.name = new_name
+        new_main_lithology_group.readonly = False
+        self.main_lithology_groups.append(new_main_lithology_group)
+        return new_main_lithology_group
+
+    def delete_main_lithology_group(self, main_lithology_group: MainLithologyGroup | str) -> None:
+        """Delete a main lithology group"""
+        if isinstance(main_lithology_group, str):
+            main_lithology_group = self.get_main_lithology_group(main_lithology_group)
+        self.main_lithology_groups.remove(main_lithology_group)
+
+    def delete_lithology_group(self, lithology_group: LithologyGroup | str) -> None:
+        """Deletes a lithology group"""
+        if isinstance(lithology_group, str):
+            lithology_group, main_lithology_group = self.get_lithology_group(lithology_group)
+        elif isinstance(lithology_group, LithologyGroup):
+            main_lithology_group = self.get_main_lithology_group_for_lithology_group(lithology_group)
+
+        main_lithology_group.lithology_groups.remove(lithology_group)
+
+    def delete_lithology(self, lithology: Lithology | str) -> None:
+        """Delete lithology"""
+        if isinstance(lithology, str):
+            lithology, lithology_group, _main_lithology_group = self.get_lithology(lithology)
+        elif isinstance(lithology, Lithology):
+            lithology_group = self.get_lithology_group_for_lithology(lithology)
+
+        lithology_group.lithologies.remove(lithology)

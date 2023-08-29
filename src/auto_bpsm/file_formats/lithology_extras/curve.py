@@ -1,8 +1,11 @@
 from typing import Optional
 from pydantic_xml import BaseXmlModel, element
 import pandas as pd
-from typing_extensions import Self
-from copy import deepcopy
+
+from auto_bpsm.utilities import decode_id_and_name, items_lookup_return
+
+# from typing_extensions import Self
+# from copy import deepcopy
 
 
 class CurvePoint(BaseXmlModel):
@@ -57,3 +60,28 @@ class CurveGroup(BaseXmlModel):
     name: str = element(tag="Name")
     readonly: str = element(tag="ReadOnly")
     curves: list[Curve] = element(tag="Curve", default_factory=list)
+
+    @property
+    def curve_ids(self) -> list[str]:
+        """Returns all the ids of the curves in the curve group"""
+        ids = []
+        for curve in self.curves:
+            ids.append(curve.id)
+        return ids
+
+    def get_curves(
+        self,
+        identifier: str,
+        is_unique: bool = False,
+    ) -> Curve | list[Curve]:
+        """Return curves found"""
+        id, name = decode_id_and_name(identifier)
+        found_curves = []
+        for curve in self.curves:
+            if curve.name == name or curve.id == id:
+                found_curves.append([curve, self])
+        return items_lookup_return(found_curves, is_unique)
+
+    def contains_curve(self, curve: Curve):
+        """Returns the curve group for the curve"""
+        return curve in self.curves

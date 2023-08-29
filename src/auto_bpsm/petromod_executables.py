@@ -51,7 +51,7 @@ class PetroMod:
     @staticmethod
     def run_command(command: str) -> str:
         """Runs a commmand"""
-        log = subprocess.getoutput(command)
+        log = subprocess.getoutput(f"{command}")
         return log
 
     @staticmethod
