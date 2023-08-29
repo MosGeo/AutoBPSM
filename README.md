@@ -16,6 +16,7 @@ See notebook for example application
 
 # Citing/referencing
 If you use this code, please reference this paper:
+
 Al Ibrahim, Mustafa A., 2023, An open source toolbox to automate basin and petroleum system modeling for statistical analysis and uncertainty quantification, Presented at IMAGE 23, Houston, Texas, 5 p.
 
  
